@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Unit tests
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run unit tests
+        run: swift test --parallel
+
+  build:
+    name: Build release
+    runs-on: macos-14
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: swift build -c release
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: MazzyReceiver-macos
+          path: .build/release/MazzyReceiver
+
+  smoke:
+    name: Protocol smoke test
+    runs-on: macos-14
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download binary
+        uses: actions/download-artifact@v4
+        with:
+          name: MazzyReceiver-macos
+          path: bin
+      - name: Run receiver against local smoke server
+        run: |
+          chmod +x bin/MazzyReceiver
+          python3 Scripts/smoke_test.py &
+          SMOKE_PID=$!
+          sleep 2
+          ./bin/MazzyReceiver --host 127.0.0.1 &
+          RX_PID=$!
+          wait $SMOKE_PID
+          kill $RX_PID 2>/dev/null || true
