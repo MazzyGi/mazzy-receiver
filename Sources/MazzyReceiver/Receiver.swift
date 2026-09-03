@@ -156,17 +156,22 @@ final class Receiver {
         }
         let sps = stripSC(spspps.sps)
         let pps = stripSC(spspps.pps)
+        // VideoToolbox wants non-optional UnsafePointer<UInt8> per parameter set
         var status: OSStatus = -1
         var newDesc: CMVideoFormatDescription?
         sps.withUnsafeBytes { (spsRaw: UnsafeRawBufferPointer) in
             pps.withUnsafeBytes { (ppsRaw: UnsafeRawBufferPointer) in
-                var ptrs: [UnsafeRawPointer?] = [spsRaw.baseAddress, ppsRaw.baseAddress]
-                status = CMVideoFormatDescriptionCreateFromH264ParameterSets(
-                    parameterSetCount: 2,
-                    parameterSetPointers: &ptrs,
-                    parameterSetSizes: [spsRaw.count, ppsRaw.count],
-                    nalUnitHeaderLength: 2,
-                    formatDescriptionOut: &newDesc)
+                guard let spsBase = spsRaw.baseAddress, let ppsBase = ppsRaw.baseAddress else { return }
+                status = spsBase.withMemoryRebound(to: UInt8.self, capacity: spsRaw.count) { spsPtr in
+                    ppsBase.withMemoryRebound(to: UInt8.self, capacity: ppsRaw.count) { ppsPtr in
+                        CMVideoFormatDescriptionCreateFromH264ParameterSets(
+                            parameterSetCount: 2,
+                            parameterSetPointers: [spsPtr, ppsPtr],
+                            parameterSetSizes: [spsRaw.count, ppsRaw.count],
+                            nalUnitHeaderLength: 4,
+                            formatDescriptionOut: &newDesc)
+                    }
+                }
             }
         }
         guard status == noErr, let fd = newDesc else {
@@ -222,23 +227,22 @@ final class Receiver {
         guard copyStatus == kCMBlockBufferNoErr else { return }
 
         var sample: CMSampleBuffer?
-        let sbStatus = CMSampleBufferCreate(
-            allocator: kCFAllocatorDefault,
-            dataBuffer: block,
-            dataReady: true,
-            makeDataReadyCallback: nil,
-            refcon: nil,
-            formatDescription: fd,
-            sampleCount: 1,
-            sampleTimingEntryCount: 1,
-            sampleTimingArray: [CMSampleTimingInfo(duration: CMTime(value: 1, timescale: 600), presentationTimeStamp: CMTime(value: 1, timescale: 600), decodeTimeStamp: .invalid)],
-            sampleSizeEntryCount: 1,
-            sampleSizeArray: [Int32(avcc.count)],
-            sampleBufferOut: &sample)
+        var timing = CMSampleTimingInfo(duration: CMTime(value: 1, timescale: 600), presentationTimeStamp: CMTime(value: 1, timescale: 600), decodeTimeStamp: .invalid)
+        var sizes: [Int] = [avcc.count]
+        let sbStatus = timing.withUnsafeMutableBytes { timingRaw in
+            sizes.withUnsafeMutableBufferPointer { sizesBuf in
+                CMSampleBufferCreate(
+                    kCFAllocatorDefault, block, true, nil, nil,
+                    fd, 1, 1,
+                    timingRaw.baseAddress?.assumingMemoryBound(to: CMSampleTimingInfo.self),
+                    1, sizesBuf.baseAddress,
+                    &sample)
+            }
+        }
         guard sbStatus == noErr, let sample else { return }
 
         VTDecompressionSessionDecodeFrame(
-            session, sample, .init(), nil
+            session, sampleBuffer: sample, flags: VTDecodeInfoFlags(), infoFlagsOut: nil
         ) { [weak self] _, buf, status, _, _ in
             guard let self, status == noErr, let buf else { return }
             let ms = -t0.timeIntervalSinceNow * 1000
