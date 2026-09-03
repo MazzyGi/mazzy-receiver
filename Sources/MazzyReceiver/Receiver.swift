@@ -157,16 +157,16 @@ final class Receiver {
         let sps = stripSC(spspps.sps)
         let pps = stripSC(spspps.pps)
         var status: OSStatus = -1
-        var newDesc: CMFormatDescription?
-        sps.withUnsafeBytes { spsRaw in
-            pps.withUnsafeBytes { ppsRaw in
+        var newDesc: CMVideoFormatDescription?
+        sps.withUnsafeBytes { (spsRaw: UnsafeRawBufferPointer) in
+            pps.withUnsafeBytes { (ppsRaw: UnsafeRawBufferPointer) in
                 var ptrs: [UnsafeRawPointer?] = [spsRaw.baseAddress, ppsRaw.baseAddress]
                 status = CMVideoFormatDescriptionCreateFromH264ParameterSets(
-                    2,
-                    &ptrs,
-                    [spsRaw.count, ppsRaw.count],
-                    2,
-                    &newDesc)
+                    parameterSetCount: 2,
+                    parameterSetPointers: &ptrs,
+                    parameterSetSizes: [spsRaw.count, ppsRaw.count],
+                    nalUnitHeaderLength: 2,
+                    formatDescriptionOut: &newDesc)
             }
         }
         guard status == noErr, let fd = newDesc else {
@@ -179,7 +179,12 @@ final class Receiver {
             kCVPixelBufferIOSurfacePropertiesKey as NSString: [:] as CFDictionary,
         ]
         var s: VTDecompressionSession?
-        status = VTDecompressionSessionCreate(nil, fd, nil, attrs as CFDictionary, &s)
+        status = VTDecompressionSessionCreate(
+            allocator: nil,
+            formatDescription: fd,
+            decoderSpecification: nil,
+            imageBufferAttributes: attrs as CFDictionary,
+            decompressionSessionOut: &s)
         guard status == noErr, let session = s else {
             print("[decode] session create failed \(status)"); return
         }
@@ -196,23 +201,44 @@ final class Receiver {
         // AVCC bytes -> CMBlockBuffer -> CMSampleBuffer
         var block: CMBlockBuffer?
         let bufStatus = CMBlockBufferCreateWithMemoryBlock(
-            kCFAllocatorDefault, nil, avcc.count,
-            kCFAllocatorDefault, nil, 0, avcc.count, 0, &block)
+            allocator: kCFAllocatorDefault,
+            memoryBlock: nil,
+            blockLength: avcc.count,
+            blockAllocator: kCFAllocatorDefault,
+            customBlockSource: nil,
+            offsetToData: 0,
+            dataLength: avcc.count,
+            flags: 0,
+            blockBufferOut: &block)
         guard bufStatus == kCMBlockBufferNoErr, let block else { return }
-        let copyStatus = avcc.withUnsafeBytes { ptr in
-            CMBlockBufferReplaceDataBytes(ptr.baseAddress, block, 0, avcc.count)
+        let copyStatus: OSStatus = avcc.withUnsafeBytes { (ptr: UnsafeRawBufferPointer) in
+            guard let base = ptr.baseAddress else { return kCMBlockBufferStructureAllocationFailedErr }
+            return CMBlockBufferReplaceDataBytes(
+                with: base,
+                blockBuffer: block,
+                offsetIntoDestination: 0,
+                dataLength: avcc.count)
         }
         guard copyStatus == kCMBlockBufferNoErr else { return }
 
         var sample: CMSampleBuffer?
         let sbStatus = CMSampleBufferCreate(
-            kCFAllocatorDefault, block, true, nil, nil,
-            fd, 1, CMTime(value: 1, timescale: 600), 1,
-            [Int32(avcc.count)], &sample)
+            allocator: kCFAllocatorDefault,
+            dataBuffer: block,
+            dataReady: true,
+            makeDataReadyCallback: nil,
+            refcon: nil,
+            formatDescription: fd,
+            sampleCount: 1,
+            sampleTimingEntryCount: 1,
+            sampleTimingArray: [CMSampleTimingInfo(duration: CMTime(value: 1, timescale: 600), presentationTimeStamp: CMTime(value: 1, timescale: 600), decodeTimeStamp: .invalid)],
+            sampleSizeEntryCount: 1,
+            sampleSizeArray: [Int32(avcc.count)],
+            sampleBufferOut: &sample)
         guard sbStatus == noErr, let sample else { return }
 
         VTDecompressionSessionDecodeFrame(
-            session, sample, [], nil
+            session, sample, .init(), nil
         ) { [weak self] _, buf, status, _, _ in
             guard let self, status == noErr, let buf else { return }
             let ms = -t0.timeIntervalSinceNow * 1000
