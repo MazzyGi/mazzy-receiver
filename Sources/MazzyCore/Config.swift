@@ -99,8 +99,8 @@ public enum ControlProtocol {
 
 /// chiaki DualSense button bitmask (lib/include/chiaki/controller.h).
 public enum ControllerButton: UInt32, CaseIterable {
-    case cross = 1 << 0, moon = 1 << 1, box = 1 << 2, pyramid = 1 << 3
-    case dpadLeft = 1 << 4, dpadRight = 1 << 5, dpadUp = 1 << 6, dpadDown = 1 << 7
-    case l1 = 1 << 8, r1 = 1 << 9, l3 = 1 << 10, r3 = 1 << 11
-    case options = 1 << 12, share = 1 << 13, touchpad = 1 << 14, ps = 1 << 15
+    case cross = 0x0001, moon = 0x0002, box = 0x0004, pyramid = 0x0008
+    case dpadLeft = 0x0010, dpadRight = 0x0020, dpadUp = 0x0040, dpadDown = 0x0080
+    case l1 = 0x0100, r1 = 0x0200, l3 = 0x0400, r3 = 0x0800
+    case options = 0x1000, share = 0x2000, touchpad = 0x4000, ps = 0x8000
 }
