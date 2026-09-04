@@ -41,12 +41,25 @@ jobs:
           name: MazzyReceiver-macos
           path: bin
       - name: Run receiver against local smoke server
+        timeout-minutes: 5
         run: |
           chmod +x bin/MazzyReceiver
-          python3 Scripts/smoke_test.py &
+          python3 Scripts/smoke_test.py > smoke.log 2>&1 &
           SMOKE_PID=$!
           sleep 2
-          ./bin/MazzyReceiver --host 127.0.0.1 &
+          ./bin/MazzyReceiver --host 127.0.0.1 > rx.log 2>&1 &
           RX_PID=$!
-          wait $SMOKE_PID
+          # wait for smoke to finish (max ~60s of feeding)
+          for i in $(seq 1 60); do
+            if ! kill -0 $SMOKE_PID 2>/dev/null; then break; fi
+            sleep 1
+          done
           kill $RX_PID 2>/dev/null || true
+          kill $SMOKE_PID 2>/dev/null || true
+          echo "--- smoke.log ---"; cat smoke.log
+          echo "--- rx.log ---"; cat rx.log
+          if grep -q PASS smoke.log; then
+            echo "SMOKE PASS"
+          else
+            echo "SMOKE FAIL"; exit 1
+          fi
