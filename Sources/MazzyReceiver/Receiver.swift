@@ -107,13 +107,18 @@ final class Receiver {
         let probeLen = socklen_t(MemoryLayout<sockaddr_in>.size)
         // first probe immediately, then periodically
         let probeBytes = Array(probe.utf8)
+        var probeCount = 0
         func fireProbe() {
-            probeBytes.withUnsafeBufferPointer { ub in
-                withUnsafePointer(to: &probeAddr) { pa in
-                    pa.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
-                        _ = sendto(probeSock, ub.baseAddress, probeBytes.count, 0, sa, probeLen)
+            let rc = probeBytes.withUnsafeBufferPointer { ub -> Int in
+                withUnsafePointer(to: &probeAddr) { pa -> Int in
+                    pa.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa -> Int in
+                        sendto(probeSock, ub.baseAddress, probeBytes.count, 0, sa, probeLen)
                     }
                 }
+            }
+            probeCount += 1
+            if probeCount <= 3 || rc < 0 {
+                print("[video] probe#\(probeCount) sendto=\(rc) errno=\(errno) target=\(config.host):\(config.videoPort)")
             }
         }
         fireProbe()
