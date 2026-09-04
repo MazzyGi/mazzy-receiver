@@ -102,10 +102,12 @@ final class H264ParserTests: XCTestCase {
         XCTAssertEqual(nals[0].type, 7)
         XCTAssertEqual(nals[1].type, 8)
         XCTAssertEqual(nals[2].type, 5)
-        // exact header positions: NAL1 hdr=4, NAL2 hdr=4+3+3=10, NAL3 hdr=10+3+3=16
+        // exact header positions (all NALs here use 4-byte start codes):
+        // NAL1 = 4+[67]+[11,22] (7B) -> hdr=4; NAL2 starts at 7 -> hdr=11;
+        // NAL3 starts at 14 -> hdr=18
         XCTAssertEqual(nals[0].headerIndex, 4)
-        XCTAssertEqual(nals[1].headerIndex, 10)
-        XCTAssertEqual(nals[2].headerIndex, 16)
+        XCTAssertEqual(nals[1].headerIndex, 11)
+        XCTAssertEqual(nals[2].headerIndex, 18)
     }
 
     func testThreeByteStartCodes() {
@@ -135,9 +137,14 @@ final class H264ParserTests: XCTestCase {
 
     func testAnnexBToAVCC() {
         // nal(1, body:[0x0A]) = 00 00 00 01 41 0A -> body after strip = [41,0A] (2 bytes)
-        let buf = Data(nal(1, body: [0x0A]) + nal(5, body: [0x0B]))
+        let raw = nal(1, body: [0x0A]) + nal(5, body: [0x0B])
+        let buf = Data(raw)
+        let nals = H264Parser.splitNALs(buf)
         let avcc = H264Parser.annexBToAVCC(buf)
         let u8 = [UInt8](avcc)
+        print("RAW  = \(raw.map { String(format: "%02x", $0) }.joined())")
+        print("NALs = \(nals.map { "(\($0.payloadRange.lowerBound)..(\($0.payloadRange.upperBound)) hdr=\($0.headerIndex) type=\($0.type)" })")
+        print("AVCC = \(u8.map { String(format: "%02x", $0) }.joined())")
         // two NALs -> 4-byte length prefix + 2-byte body each
         XCTAssertEqual(u8.count, (4 + 2) * 2)
         // first length prefix is 2 (big endian)
