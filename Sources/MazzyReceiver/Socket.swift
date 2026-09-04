@@ -68,7 +68,11 @@ final class Socket {
             var buf = [UInt8](repeating: 0, count: 65536)
             let n = recv(self.fd, &buf, buf.count, 0)
             if n > 0 { self.onData?(Data(buf[0..<n])) }
-            else if n == 0 { print("[socket] closed") }
+            else {
+                // EOF or error: stop the source so it doesn't spin
+                print("[socket] closed (\(n))")
+                src.cancel()
+            }
         }
         src.resume()
         source = src

@@ -100,9 +100,13 @@ final class Receiver {
         let probe = ControlProtocol.probeMessage(videoPort: vPort, audioPort: vPort)
         // keep punching so the daemon always knows where to send
         let timer = DispatchSource.makeTimerSource(queue: queue)
-        timer.schedule(deadline: .now(), repeating: .milliseconds(config.probeIntervalMs))
-        timer.setEventHandler { [weak sock] in sock?.sendLineTo(probe, host: self.config.host, port: Int(self.config.videoPort)) }
+        timer.schedule(deadline: .now() + 0.1, repeating: .milliseconds(config.probeIntervalMs))
+        timer.setEventHandler { [weak self, weak sock] in
+            guard let self, let sock else { return }
+            sock.sendLineTo(probe, host: self.config.host, port: Int(self.config.videoPort))
+        }
         timer.resume()
+        print("[video] probing daemon at \(config.host):\(config.videoPort) every \(config.probeIntervalMs)ms")
 
         var waitingKeyframe = config.waitForKeyframe
         sock.onData = { [weak self] data in
