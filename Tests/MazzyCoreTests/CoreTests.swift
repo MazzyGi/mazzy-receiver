@@ -136,26 +136,25 @@ final class H264ParserTests: XCTestCase {
     }
 
     func testAnnexBToAVCC() {
-        // nal(1, body:[0x0A]) = 00 00 00 01 41 0A -> body after strip = [41,0A] (2 bytes)
+        // helper emits the raw type byte as the NAL header (nal_ref_idc=0)
         let raw = nal(1, body: [0x0A]) + nal(5, body: [0x0B])
         let buf = Data(raw)
         let nals = H264Parser.splitNALs(buf)
         let avcc = H264Parser.annexBToAVCC(buf)
         let u8 = [UInt8](avcc)
-        print("RAW  = \(raw.map { String(format: "%02x", $0) }.joined())")
-        print("NALs = \(nals.map { "(\($0.payloadRange.lowerBound)..(\($0.payloadRange.upperBound)) hdr=\($0.headerIndex) type=\($0.type)" })")
-        print("AVCC = \(u8.map { String(format: "%02x", $0) }.joined())")
+        XCTAssertEqual(nals.map(\.type), [1, 5])
         // two NALs -> 4-byte length prefix + 2-byte body each
         XCTAssertEqual(u8.count, (4 + 2) * 2)
         // first length prefix is 2 (big endian)
         XCTAssertEqual(u8[0], 0); XCTAssertEqual(u8[1], 0)
         XCTAssertEqual(u8[2], 0); XCTAssertEqual(u8[3], 2)
-        // first NAL body starts with the type byte 0x41
-        XCTAssertEqual(u8[4], 0x41)
+        // first NAL body = header byte 0x01 + 0x0A
+        XCTAssertEqual(u8[4], 0x01)
         XCTAssertEqual(u8[5], 0x0A)
-        // second NAL: length 2, type 0x65
+        // second NAL: length 2, header 0x05
         XCTAssertEqual(u8[7], 2)
-        XCTAssertEqual(u8[8], 0x65)
+        XCTAssertEqual(u8[8], 0x05)
+        XCTAssertEqual(u8[9], 0x0B)
     }
 }
 
