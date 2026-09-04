@@ -151,10 +151,10 @@ final class H264ParserTests: XCTestCase {
         // first NAL body = header byte 0x01 + 0x0A
         XCTAssertEqual(u8[4], 0x01)
         XCTAssertEqual(u8[5], 0x0A)
-        // second NAL: length 2, header 0x05
-        XCTAssertEqual(u8[7], 2)
-        XCTAssertEqual(u8[8], 0x05)
-        XCTAssertEqual(u8[9], 0x0B)
+        // second NAL starts at u8[6]: length prefix 00 00 00 02, then header 0x05
+        XCTAssertEqual(u8[6], 0); XCTAssertEqual(u8[9], 2)
+        XCTAssertEqual(u8[10], 0x05)
+        XCTAssertEqual(u8[11], 0x0B)
     }
 }
 
