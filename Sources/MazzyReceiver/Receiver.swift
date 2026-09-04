@@ -41,7 +41,33 @@ final class Receiver {
         startTCP()
         startVideoUDP()
         startAudioUDP()
-        dispatchMain()
+        if RunLoop.current != RunLoop.main {
+            dispatchMain()
+        }
+    }
+
+    /// Called by GUI when headless==false: wire up only, the app loop runs.
+    func start() {
+        startTCP()
+        startVideoUDP()
+        startAudioUDP()
+    }
+
+    /// Push controller state to the daemon (rate-limited by caller).
+    func sendController(buttons: UInt32, lx: Int, ly: Int, rx: Int, ry: Int) {
+        tcp?.sendLine(ControlProtocol.ctrlMessage(buttons: buttons, lx: lx, ly: ly, rx: rx, ry: ry, l2: 0, r2: 0))
+    }
+
+    /// One-line-per-stat snapshot for the HUD / CLI stats printer.
+    func statsLines() -> [String] {
+        let s = reassembler.stats
+        let mbps = videoBitrate.bitsPerSecond / 1e6
+        let avg = decodeCount > 0 ? decodeMsTotal / Double(decodeCount) : 0
+        return [
+            String(format: "loss %.2f%%  frags %d drop %d corrupt %d", s.lossRate * 100, s.fragmentsReceived, s.fragmentsDropped, s.accessUnitsCorrupt),
+            String(format: "au %d  decoded %d  decode %.1fms (max %.1f)", auCount, decodeCount, avg, decodeMsMax),
+            String(format: "bitrate %.1f Mbps", mbps),
+        ]
     }
 
     // MARK: - TCP control
