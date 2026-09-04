@@ -98,13 +98,28 @@ final class Receiver {
         let vPort = sock.localPort
         print("[video] udp bound on \(vPort)")
         let probe = ControlProtocol.probeMessage(videoPort: vPort, audioPort: vPort)
-        // keep punching so the daemon always knows where to send
-        let timer = DispatchSource.makeTimerSource(queue: queue)
-        timer.schedule(deadline: .now() + 0.1, repeating: .milliseconds(config.probeIntervalMs))
-        timer.setEventHandler { [weak self, weak sock] in
-            guard let self, let sock else { return }
-            sock.sendLineTo(probe, host: self.config.host, port: Int(self.config.videoPort))
+        // dedicated probe socket: keep the receive socket untouched by GCD
+        let probeSock = socket(AF_INET, SOCK_DGRAM, 0)
+        var probeAddr = sockaddr_in()
+        probeAddr.sin_family = sa_family_t(AF_INET)
+        probeAddr.sin_port = UInt16(config.videoPort).bigEndian
+        probeAddr.sin_addr = in_addr(s_addr: inet_addr(config.host))
+        let probeLen = socklen_t(MemoryLayout<sockaddr_in>.size)
+        // first probe immediately, then periodically
+        let probeBytes = Array(probe.utf8)
+        func fireProbe() {
+            probeBytes.withUnsafeBufferPointer { ub in
+                withUnsafePointer(to: &probeAddr) { pa in
+                    pa.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
+                        _ = sendto(probeSock, ub.baseAddress, probeBytes.count, 0, sa, probeLen)
+                    }
+                }
+            }
         }
+        fireProbe()
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + 0.2, repeating: .milliseconds(config.probeIntervalMs))
+        timer.setEventHandler { fireProbe() }
         timer.resume()
         print("[video] probing daemon at \(config.host):\(config.videoPort) every \(config.probeIntervalMs)ms")
 
