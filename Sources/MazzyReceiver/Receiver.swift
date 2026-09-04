@@ -234,7 +234,7 @@ final class Receiver {
             duration: CMTime(value: 1, timescale: 600),
             presentationTimeStamp: CMTime(value: 1, timescale: 600),
             decodeTimeStamp: .invalid)]
-        var sizes: [Int32] = [Int32(avcc.count)]
+        var sizes: [Int] = [avcc.count]
         let sbStatus = timing.withUnsafeMutableBufferPointer { timingBuf in
             sizes.withUnsafeMutableBufferPointer { sizesBuf in
                 CMSampleBufferCreate(
@@ -256,7 +256,7 @@ final class Receiver {
 
         VTDecompressionSessionDecodeFrame(
             session, sampleBuffer: sample, flags: [], infoFlagsOut: nil
-        ) { [weak self] _, imageBuffer, decodeStatus, _, _ in
+        ) { [weak self] _, imageBuffer, decodeStatus in
             guard let self, decodeStatus == noErr, let buf = imageBuffer else { return }
             // VideoToolbox hands back a CVPixelBuffer as CVImageBuffer
             let pix = unsafeBitCast(buf, to: CVPixelBuffer.self)
