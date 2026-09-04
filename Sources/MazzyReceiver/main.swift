@@ -4,6 +4,9 @@ import MazzyCore
 // headless-ish receiver for now: connects, decodes, prints stats.
 // Metal window comes in the next step.
 
+// line-buffer stdout so logs survive when the process is killed (CI smoke test)
+setvbuf(stdout, nil, _IOLBF, 0)
+
 let configPath = NSString(string: "~/.mazzy-receiver.json").expandingTildeInPath
 var config = ReceiverConfig.load(path: configPath)
 
