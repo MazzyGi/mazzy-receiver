@@ -156,7 +156,6 @@ final class Receiver {
         }
         let sps = stripSC(spspps.sps)
         let pps = stripSC(spspps.pps)
-        // VideoToolbox wants non-optional UnsafePointer<UInt8> per parameter set
         var status: OSStatus = -1
         var newDesc: CMVideoFormatDescription?
         sps.withUnsafeBytes { (spsRaw: UnsafeRawBufferPointer) in
@@ -164,12 +163,13 @@ final class Receiver {
                 guard let spsBase = spsRaw.baseAddress, let ppsBase = ppsRaw.baseAddress else { return }
                 status = spsBase.withMemoryRebound(to: UInt8.self, capacity: spsRaw.count) { spsPtr in
                     ppsBase.withMemoryRebound(to: UInt8.self, capacity: ppsRaw.count) { ppsPtr in
-                        CMVideoFormatDescriptionCreateFromH264ParameterSets(
-                            parameterSetCount: 2,
-                            parameterSetPointers: [spsPtr, ppsPtr],
-                            parameterSetSizes: [spsRaw.count, ppsRaw.count],
-                            nalUnitHeaderLength: 4,
-                            formatDescriptionOut: &newDesc)
+                        var ptrs: [UnsafePointer<UInt8>] = [spsPtr, ppsPtr]
+                        return ptrs.withUnsafeBufferPointer { ptrBuf in
+                            CMVideoFormatDescriptionCreateFromH264ParameterSets(
+                                nil, 2, ptrBuf.baseAddress!,
+                                [spsRaw.count, ppsRaw.count],
+                                4, &newDesc)
+                        }
                     }
                 }
             }
@@ -227,30 +227,33 @@ final class Receiver {
         guard copyStatus == kCMBlockBufferNoErr else { return }
 
         var sample: CMSampleBuffer?
-        var timing = CMSampleTimingInfo(duration: CMTime(value: 1, timescale: 600), presentationTimeStamp: CMTime(value: 1, timescale: 600), decodeTimeStamp: .invalid)
+        var timing = [CMSampleTimingInfo(
+            duration: CMTime(value: 1, timescale: 600),
+            presentationTimeStamp: CMTime(value: 1, timescale: 600),
+            decodeTimeStamp: .invalid)]
         var sizes: [Int] = [avcc.count]
-        let sbStatus = timing.withUnsafeMutableBytes { timingRaw in
+        let sbStatus = timing.withUnsafeMutableBufferPointer { timingBuf in
             sizes.withUnsafeMutableBufferPointer { sizesBuf in
                 CMSampleBufferCreate(
                     kCFAllocatorDefault, block, true, nil, nil,
-                    fd, 1, 1,
-                    timingRaw.baseAddress?.assumingMemoryBound(to: CMSampleTimingInfo.self),
-                    1, sizesBuf.baseAddress,
+                    fd, 1, 1, timingBuf.baseAddress, 1, sizesBuf.baseAddress,
                     &sample)
             }
         }
         guard sbStatus == noErr, let sample else { return }
 
         VTDecompressionSessionDecodeFrame(
-            session, sampleBuffer: sample, flags: VTDecodeInfoFlags(), infoFlagsOut: nil
-        ) { [weak self] _, buf, status, _, _ in
-            guard let self, status == noErr, let buf else { return }
+            session, sample, [], nil
+        ) { [weak self] _, imageBuffer, status, _, _ in
+            guard let self, status == noErr, let buf = imageBuffer else { return }
+            // VideoToolbox hands back a CVPixelBuffer as CVImageBuffer
+            let pix = unsafeBitCast(buf, to: CVPixelBuffer.self)
             let ms = -t0.timeIntervalSinceNow * 1000
             self.queue.async {
                 self.decodeCount += 1
                 self.decodeMsTotal += ms
                 self.decodeMsMax = max(self.decodeMsMax, ms)
-                self.onFrame?(buf)
+                self.onFrame?(pix)
                 self.maybePrintStats()
             }
         }
