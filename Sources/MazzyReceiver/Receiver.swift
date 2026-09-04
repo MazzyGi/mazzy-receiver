@@ -163,13 +163,16 @@ final class Receiver {
                 guard let spsBase = spsRaw.baseAddress, let ppsBase = ppsRaw.baseAddress else { return }
                 status = spsBase.withMemoryRebound(to: UInt8.self, capacity: spsRaw.count) { spsPtr in
                     ppsBase.withMemoryRebound(to: UInt8.self, capacity: ppsRaw.count) { ppsPtr in
-                        var ptrs: [UnsafePointer<UInt8>] = [spsPtr, ppsPtr]
-                        return ptrs.withUnsafeBufferPointer { ptrBuf in
-                            CMVideoFormatDescriptionCreateFromH264ParameterSets(
-                                nil, 2, ptrBuf.baseAddress!,
-                                [spsRaw.count, ppsRaw.count],
-                                4, &newDesc)
-                        }
+                var ptrs: [UnsafePointer<UInt8>] = [spsPtr, ppsPtr]
+                return ptrs.withUnsafeBufferPointer { ptrBuf in
+                    CMVideoFormatDescriptionCreateFromH264ParameterSets(
+                        allocator: nil,
+                        parameterSetCount: 2,
+                        parameterSetPointers: ptrBuf.baseAddress!,
+                        parameterSetSizes: [spsRaw.count, ppsRaw.count],
+                        nalUnitHeaderLength: 4,
+                        formatDescriptionOut: &newDesc)
+                }
                     }
                 }
             }
@@ -231,21 +234,30 @@ final class Receiver {
             duration: CMTime(value: 1, timescale: 600),
             presentationTimeStamp: CMTime(value: 1, timescale: 600),
             decodeTimeStamp: .invalid)]
-        var sizes: [Int] = [avcc.count]
+        var sizes: [Int32] = [Int32(avcc.count)]
         let sbStatus = timing.withUnsafeMutableBufferPointer { timingBuf in
             sizes.withUnsafeMutableBufferPointer { sizesBuf in
                 CMSampleBufferCreate(
-                    kCFAllocatorDefault, block, true, nil, nil,
-                    fd, 1, 1, timingBuf.baseAddress, 1, sizesBuf.baseAddress,
-                    &sample)
+                    allocator: kCFAllocatorDefault,
+                    dataBuffer: block,
+                    dataReady: true,
+                    makeDataReadyCallback: nil,
+                    refcon: nil,
+                    formatDescription: fd,
+                    sampleCount: 1,
+                    sampleTimingEntryCount: 1,
+                    sampleTimingArray: timingBuf.baseAddress,
+                    sampleSizeEntryCount: 1,
+                    sampleSizeArray: sizesBuf.baseAddress,
+                    sampleBufferOut: &sample)
             }
         }
         guard sbStatus == noErr, let sample else { return }
 
         VTDecompressionSessionDecodeFrame(
-            session, sample, [], nil
-        ) { [weak self] _, imageBuffer, status, _, _ in
-            guard let self, status == noErr, let buf = imageBuffer else { return }
+            session, sampleBuffer: sample, flags: [], infoFlagsOut: nil
+        ) { [weak self] _, imageBuffer, decodeStatus, _, _ in
+            guard let self, decodeStatus == noErr, let buf = imageBuffer else { return }
             // VideoToolbox hands back a CVPixelBuffer as CVImageBuffer
             let pix = unsafeBitCast(buf, to: CVPixelBuffer.self)
             let ms = -t0.timeIntervalSinceNow * 1000
