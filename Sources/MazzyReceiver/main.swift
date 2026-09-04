@@ -26,8 +26,10 @@ print("video udp:\(config.videoPort) audio udp:\(config.audioPort) tcp:\(config.
 let receiver = Receiver(config: config)
 
 if headless {
-    receiver.run()
-    withExtendedLifetime(receiver) {}
+    receiver.start()
+    withExtendedLifetime(receiver) {
+        dispatchMain()  // never returns
+    }
     exit(0)
 }
 

@@ -41,9 +41,7 @@ final class Receiver {
         startTCP()
         startVideoUDP()
         startAudioUDP()
-        if RunLoop.current != RunLoop.main {
-            dispatchMain()
-        }
+        dispatchMain()
     }
 
     /// Called by GUI when headless==false: wire up only, the app loop runs.
