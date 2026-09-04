@@ -37,9 +37,10 @@ final class MetalRenderer {
     }
 
     private func buildPipeline() {
-        let lib: MTLLibrary
-        do { lib = try device.makeDefaultLibrary()! }
-        catch { fatalError("shader library missing: \(error)") }
+        guard let lib = device.makeDefaultLibrary() else {
+            print("[metal] default library missing (no .metal sources linked?)")
+            return
+        }
         let vdesc = MTLVertexDescriptor()
         vdesc.attributes[0].format = .float2
         vdesc.attributes[0].offset = 0

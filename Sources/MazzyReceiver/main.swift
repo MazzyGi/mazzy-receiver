@@ -36,7 +36,10 @@ let app = NSApplication.shared
 app.setActivationPolicy(.regular)
 
 guard let renderer = MetalRenderer(config: config) else {
-    fatalError("Metal unavailable")
+    print("[gui] Metal unavailable - falling back to headless")
+    receiver.run()
+    withExtendedLifetime(receiver) {}
+    exit(0)
 }
 let audio = AudioPlayer(config: config)
 audio.start()
