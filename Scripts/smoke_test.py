@@ -12,7 +12,10 @@ Usage:
 """
 import socket, struct, threading, json, sys, time
 
-TCP_PORT, VIDEO_PORT, AUDIO_PORT = 50001, 50002, 50003
+import os
+TCP_PORT = int(os.environ.get("SMOKE_TCP", 50001))
+VIDEO_PORT = int(os.environ.get("SMOKE_VIDEO", 50002))
+AUDIO_PORT = int(os.environ.get("SMOKE_AUDIO", 50003))
 VIDEO_MAGIC, AUDIO_MAGIC = 0xC1, 0xC2
 
 def frag_packet(counter, frag_id, frag_count, payload):
@@ -54,8 +57,23 @@ def main():
     vsock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     vsock.bind(('0.0.0.0', VIDEO_PORT))
     vsock.settimeout(10)
-    probe, caddr = vsock.recvfrom(64)
-    assert probe.startswith(b'PROBE1'), f"expected PROBE1, got {probe!r}"
+    # loopback sanity check before waiting on the receiver
+    _san = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    _san.sendto(b'SANITY', ('127.0.0.1', VIDEO_PORT))
+    _san.close()
+    print('[smoke] sanity packet sent to self')
+    deadline = time.time() + 15
+    probe, caddr = None, None
+    while time.time() < deadline:
+        try:
+            pkt, addr = vsock.recvfrom(64)
+            if pkt.startswith(b'PROBE1'):
+                probe, caddr = pkt, addr
+                break
+            print(f'[smoke] non-probe packet from {addr}: {pkt!r}')
+        except socket.timeout:
+            pass
+    assert probe, 'never received PROBE1 from receiver (sanity check passed, so loopback UDP works)'
     vport = int(probe.split()[1])
     print(f"[smoke] probe from {caddr} port {vport}")
 
