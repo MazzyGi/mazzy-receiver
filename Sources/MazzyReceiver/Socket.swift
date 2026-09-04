@@ -92,11 +92,18 @@ final class Socket {
         hints.ai_family = AF_INET
         hints.ai_socktype = SOCK_DGRAM
         var info: UnsafeMutablePointer<addrinfo>?
-        guard getaddrinfo(host, String(port), &hints, &info) == 0, let first = info?.pointee else { return }
+        let gai = getaddrinfo(host, String(port), &hints, &info)
+        guard gai == 0, let first = info?.pointee else {
+            print("[socket] getaddrinfo(\(host):\(port)) failed: \(gai)")
+            return
+        }
         defer { freeaddrinfo(info) }
         var data = Array(line.utf8)
-        data.withUnsafeBufferPointer { buf in
-            _ = sendto(fd, buf.baseAddress, buf.count, 0, first.ai_addr, first.ai_addrlen)
+        let sent = data.withUnsafeBufferPointer { buf in
+            sendto(fd, buf.baseAddress, buf.count, 0, first.ai_addr, first.ai_addrlen)
+        }
+        if sent < 0 {
+            print("[socket] sendto(\(host):\(port)) errno=\(errno) \(String(cString: strerror(errno)))")
         }
     }
 }
