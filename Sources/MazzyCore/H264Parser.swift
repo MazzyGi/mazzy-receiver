@@ -69,15 +69,21 @@ public enum H264Parser {
     /// VideoToolbox decode samples must be in AVCC when the format description
     /// was built from parameter sets.
     public static func annexBToAVCC(_ data: Data) -> Data {
-        var out = Data(capacity: data.count)
+        let bytes = [UInt8](data)
+        var out = [UInt8]()
+        out.reserveCapacity(bytes.count)
         for nal in splitNALs(data) {
-            // body starts at the NAL header byte (start code length is exact)
-            let body = data.subdata(in: nal.headerIndex..<nal.payloadRange.upperBound)
-            var len = UInt32(body.count).bigEndian
-            withUnsafeBytes(of: &len) { out.append(contentsOf: $0) }
-            out.append(body)
+            let h = nal.headerIndex
+            let e = nal.payloadRange.upperBound
+            guard h < e, e <= bytes.count else { continue }
+            let bodyLen = UInt32(e - h)
+            out.append(UInt8((bodyLen >> 24) & 0xFF))
+            out.append(UInt8((bodyLen >> 16) & 0xFF))
+            out.append(UInt8((bodyLen >> 8) & 0xFF))
+            out.append(UInt8(bodyLen & 0xFF))
+            out.append(contentsOf: bytes[h..<e])
         }
-        return out
+        return Data(out)
     }
 }
 
