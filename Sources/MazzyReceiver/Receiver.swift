@@ -122,10 +122,13 @@ final class Receiver {
             }
         }
         fireProbe()
-        let timer = DispatchSource.makeTimerSource(queue: queue)
-        timer.schedule(deadline: .now() + 0.2, repeating: .milliseconds(config.probeIntervalMs))
-        timer.setEventHandler { fireProbe() }
-        timer.resume()
+        let intervalUs = config.probeIntervalMs * 1000
+        Thread.detachNewThread {
+            while true {
+                usleep(useconds_t(intervalUs))
+                fireProbe()
+            }
+        }
         print("[video] probing daemon at \(config.host):\(config.videoPort) every \(config.probeIntervalMs)ms")
 
         var waitingKeyframe = config.waitForKeyframe

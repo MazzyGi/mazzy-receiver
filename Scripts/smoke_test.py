@@ -31,6 +31,10 @@ PFRM = SC + bytes([0x41]) + bytes([0x55] * 512)    # fake P frame
 def main():
     tcp_srv = socket.socket(); tcp_srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     tcp_srv.bind(('0.0.0.0', TCP_PORT)); tcp_srv.listen(1)
+    # bind the UDP socket BEFORE accepting TCP: the receiver fires its first
+    # probe the moment it starts, before we would otherwise be listening
+    vsock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    vsock.bind(('0.0.0.0', VIDEO_PORT))
     print(f"[smoke] listening tcp:{TCP_PORT} udp:{VIDEO_PORT} - waiting for receiver...")
     conn, addr = tcp_srv.accept()
     print(f"[smoke] receiver connected from {addr}")
@@ -54,9 +58,7 @@ def main():
     threading.Thread(target=reader, daemon=True).start()
 
     # wait for PROBE1, learn receiver's udp port
-    vsock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    vsock.bind(('0.0.0.0', VIDEO_PORT))
-    vsock.settimeout(10)
+    vsock.settimeout(2)
     # loopback sanity check before waiting on the receiver
     _san = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     _san.sendto(b'SANITY', ('127.0.0.1', VIDEO_PORT))
