@@ -130,13 +130,16 @@ final class H264ParserTests: XCTestCase {
     }
 
     func testAnnexBToAVCC() {
+        // nal(1, body:[0x0A]) = 00 00 00 01 41 0A -> body after strip = [41,0A] (2 bytes)
         let buf = Data(nal(1, body: [0x0A]) + nal(5, body: [0x0B]))
         let avcc = H264Parser.annexBToAVCC(buf)
-        // two NALs -> 4-byte length prefix + 3-byte body each
-        XCTAssertEqual(avcc.count, (4 + 3) * 2)
-        // first length prefix is 3
+        // two NALs -> 4-byte length prefix + 2-byte body each
+        XCTAssertEqual(avcc.count, (4 + 2) * 2)
+        // first length prefix is 2
         XCTAssertEqual(avcc[avcc.startIndex], 0)
-        XCTAssertEqual(avcc[avcc.startIndex + 3], 3)
+        XCTAssertEqual(avcc[avcc.startIndex + 3], 2)
+        // first NAL body starts with the type byte 0x41
+        XCTAssertEqual(avcc[avcc.startIndex + 4], 0x41)
     }
 }
 

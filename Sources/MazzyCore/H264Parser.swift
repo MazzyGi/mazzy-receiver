@@ -72,7 +72,10 @@ public enum H264Parser {
         for nal in splitNALs(data) {
             let chunk = data.subdata(in: nal.payloadRange)
             // strip start code (3 or 4 bytes)
-            let sc = chunk.prefix(4).last == 1 && chunk.count >= 4 && chunk[chunk.startIndex+3] == 1 ? 4 : 3
+            let sc: Int
+            if chunk.count >= 4, chunk[chunk.startIndex + 3] == 1 { sc = 4 }
+            else if chunk.count >= 3, chunk[chunk.startIndex + 2] == 1 { sc = 3 }
+            else { sc = 3 }
             let body = chunk.dropFirst(sc)
             var len = UInt32(body.count).bigEndian
             withUnsafeBytes(of: &len) { out.append(contentsOf: $0) }

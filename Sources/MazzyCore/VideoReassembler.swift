@@ -78,7 +78,7 @@ public final class VideoReassembler {
 
     private var buffers: [UInt32: AUBuffer] = [:]
     private var highestCounter: UInt32 = 0
-    private var seenCounters = Set<UInt32>()
+    private var completedCounters = Set<UInt32>()  // finished/dropped AUs (dup guard)
     private let lock = NSLock()
     public private(set) var stats = Stats()
 
@@ -107,13 +107,14 @@ public final class VideoReassembler {
 
     public func feed(header h: FragmentHeader, payload: Data) -> AccessUnit? {
         lock.lock(); defer { lock.unlock() }
-        stats.fragmentsReceived += 1
 
-        // duplicate fragment for an AU we already finished
-        if !seenCounters.insert(h.counter).inserted {
+        // AU already finished (all fragments arrived before) -> this is a dup
+        if completedCounters.contains(h.counter) {
             stats.fragmentsDropped += 1
             return nil
         }
+
+        stats.fragmentsReceived += 1
 
         // loss detection: any completed counter below this one that we never
         // finished counts as lost
@@ -124,16 +125,30 @@ public final class VideoReassembler {
         if buf.chunks[Int(h.fragID)] == nil {
             buf.chunks[Int(h.fragID)] = payload
             buf.received += 1
+        } else {
+            stats.fragmentsDropped += 1  // duplicate fragment within the AU
+            return nil
         }
 
         if buf.received == buf.chunks.count {
             buffers.removeValue(forKey: h.counter)
             stats.accessUnits += 1
+            markCompleted(h.counter)
             let data = buf.chunks.compactMap { $0 }.reduce(Data(), +)
             stats.bytesDelivered += data.count
             return AccessUnit(counter: h.counter, data: data, missingFragments: 0)
         }
         return nil
+    }
+
+    /// Track finished counters for dup detection, bounding memory.
+    private func markCompleted(_ counter: UInt32) {
+        completedCounters.insert(counter)
+        if completedCounters.count > maxWindow {
+            // drop the oldest half by numeric distance from the newest
+            let cutoff = counter &- UInt32(maxWindow / 2)
+            completedCounters.subtract(Set(completedCounters.filter { ($0 &- cutoff) & 0x8000_0000 == 0 }))
+        }
     }
 
     /// Evict incomplete AUs whose counter is far behind the newest arrival.
@@ -147,7 +162,6 @@ public final class VideoReassembler {
         highestCounter = newCounter
         for (counter, buf) in buffers where dist(counter, newCounter) > 64 {
             buffers.removeValue(forKey: counter)
-            seenCounters.remove(counter)
             let missing = buf.chunks.count - buf.received
             if deliverIncomplete, buf.received > 0, missing < buf.chunks.count {
                 stats.accessUnitsCorrupt += 1
@@ -155,17 +169,11 @@ public final class VideoReassembler {
                 // conceal. H.264 decoders can usually ride out a corrupt slice.
                 var data = Data()
                 for case let c? in buf.chunks { data.append(c) }
-                let au = AccessUnit(counter: counter, data: data, missingFragments: missing)
-                _ = au // handed back by caller via pendingEviction
-                pendingEvictions.append(au)
+                pendingEvictions.append(AccessUnit(counter: counter, data: data, missingFragments: missing))
             } else {
                 stats.accessUnitsLost += 1
             }
-        }
-        if seenCounters.count > maxWindow {
-            let cutoff = newCounter &- UInt32(maxWindow)
-            seenCounters = seenCounters.filter { dist($0, newCounter) <= maxWindow }
-            _ = cutoff
+            markCompleted(counter)
         }
     }
 
