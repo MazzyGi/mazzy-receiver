@@ -10,6 +10,7 @@ public enum H264Parser {
     public struct NAL {
         public let type: UInt8
         public let payloadRange: Range<Int> // includes the start code
+        public let headerIndex: Int          // index of the NAL header byte
     }
 
     /// Splits an Annex B buffer into NAL units (leading start code included).
@@ -34,7 +35,7 @@ public enum H264Parser {
             let nalStart = i
             let headerIdx = i + scLen
             if headerIdx < bytes.count {
-                nals.append(NAL(type: bytes[headerIdx] & 0x1F, payloadRange: nalStart..<min(end, bytes.count)))
+                nals.append(NAL(type: bytes[headerIdx] & 0x1F, payloadRange: nalStart..<min(end, bytes.count), headerIndex: headerIdx))
             }
             i = end
         }
@@ -70,13 +71,8 @@ public enum H264Parser {
     public static func annexBToAVCC(_ data: Data) -> Data {
         var out = Data(capacity: data.count)
         for nal in splitNALs(data) {
-            let chunk = data.subdata(in: nal.payloadRange)
-            // strip start code (3 or 4 bytes)
-            let sc: Int
-            if chunk.count >= 4, chunk[chunk.startIndex + 3] == 1 { sc = 4 }
-            else if chunk.count >= 3, chunk[chunk.startIndex + 2] == 1 { sc = 3 }
-            else { sc = 3 }
-            let body = chunk.dropFirst(sc)
+            // body starts at the NAL header byte (start code length is exact)
+            let body = data.subdata(in: nal.headerIndex..<nal.payloadRange.upperBound)
             var len = UInt32(body.count).bigEndian
             withUnsafeBytes(of: &len) { out.append(contentsOf: $0) }
             out.append(body)
