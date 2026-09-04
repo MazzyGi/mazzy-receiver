@@ -256,7 +256,7 @@ final class Receiver {
 
         VTDecompressionSessionDecodeFrame(
             session, sampleBuffer: sample, flags: [], infoFlagsOut: nil
-        ) { [weak self] _, imageBuffer, decodeStatus in
+        ) { [weak self] decodeStatus, _, imageBuffer, _, _, _ in
             guard let self, decodeStatus == noErr, let buf = imageBuffer else { return }
             // VideoToolbox hands back a CVPixelBuffer as CVImageBuffer
             let pix = unsafeBitCast(buf, to: CVPixelBuffer.self)
