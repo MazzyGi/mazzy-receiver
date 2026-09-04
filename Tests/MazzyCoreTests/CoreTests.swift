@@ -102,6 +102,10 @@ final class H264ParserTests: XCTestCase {
         XCTAssertEqual(nals[0].type, 7)
         XCTAssertEqual(nals[1].type, 8)
         XCTAssertEqual(nals[2].type, 5)
+        // exact header positions: NAL1 hdr=4, NAL2 hdr=4+3+3=10, NAL3 hdr=10+3+3=16
+        XCTAssertEqual(nals[0].headerIndex, 4)
+        XCTAssertEqual(nals[1].headerIndex, 10)
+        XCTAssertEqual(nals[2].headerIndex, 16)
     }
 
     func testThreeByteStartCodes() {
