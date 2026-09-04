@@ -82,8 +82,13 @@ final class Socket {
     }
 
     func sendLineTo(_ line: String, host: String, port: Int) {
+        // force IPv4: our UDP sockets are AF_INET; resolving "localhost" via
+        // getaddrinfo can yield ::1 which silently fails on sendto
+        var hints = addrinfo()
+        hints.ai_family = AF_INET
+        hints.ai_socktype = SOCK_DGRAM
         var info: UnsafeMutablePointer<addrinfo>?
-        guard getaddrinfo(host, String(port), nil, &info) == 0, let first = info?.pointee else { return }
+        guard getaddrinfo(host, String(port), &hints, &info) == 0, let first = info?.pointee else { return }
         defer { freeaddrinfo(info) }
         var data = Array(line.utf8)
         data.withUnsafeBufferPointer { buf in
