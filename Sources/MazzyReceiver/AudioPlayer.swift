@@ -1,4 +1,5 @@
 import Foundation
+import MazzyCore
 import AVFoundation
 
 /// Plays s16le interleaved stereo 48kHz PCM chunks from the daemon with a
